@@ -74,17 +74,6 @@ class Box:
                 sub_box.align_to(sub_box_ul, UL)
                 group.add(sub_box)
 
-                # spacing_i = sum(spacing[:i + 1])
-
-                # sub_box_width = width if self.flip else spacing_i
-                # sub_box_height = spacing_i if self.flip else height
-                # sub_box = self.sub_boxes[i].createObjs(sub_box_width, sub_box_height, draw_outer_box=False)
-                # sub_box.set_stroke(color=BLUE)
-
-                # sub_box_ul = box.get_corner(UL) + (inc_dir * spacing_i * i)
-                # sub_box.align_to(sub_box_ul, UL)
-                # group.add(sub_box)
-
         return group
 
 class SubDivBox(Scene):

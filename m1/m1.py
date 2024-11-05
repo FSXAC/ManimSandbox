@@ -2,12 +2,89 @@
 
 from manim import *
 
+class Box:
+    def __init__(self, num_sub_boxes=1, flip=False):
+        self.num_sub_boxes = num_sub_boxes
+        self.flip = flip
+
+        self.sub_boxes = {}
+        self.sub_box_weights = [1] * num_sub_boxes
+
+    def addSubBox(self, index, **kwargs):
+
+        index = index % self.num_sub_boxes
+        
+        self.sub_boxes[index] = Box(**kwargs)
+        return self.sub_boxes[index]
+    
+    def setSubBoxWeight(self, index, weight):
+        index = index % self.num_sub_boxes
+        self.sub_box_weights[index] = weight
+
+    def createObjs(self, width, height, draw_outer_box=True):
+        group = VGroup()
+
+        box = Rectangle(width=width, height=height)
+        if not draw_outer_box:
+            box.set_stroke(opacity=0)
+        else:
+            box.set_stroke(width=1, opacity=0.7)
+        group.add(box)
+
+        if self.num_sub_boxes > 1:
+
+            # draw division lines for num of subboxes
+            length = height if self.flip else width
+            inc_dir = DOWN if self.flip else RIGHT
+
+            # Uniform spacing
+            spacing_uniform = length / self.num_sub_boxes
+            print(f'Uniform spacing: {spacing_uniform}')
+
+            # Compute weights
+            norm_weights = [w / sum(self.sub_box_weights) for w in self.sub_box_weights]
+            print(norm_weights)
+            print(sum(norm_weights)) # Should be 1
+
+            # Calulate spacing
+            spacing = [spacing_uniform] * self.num_sub_boxes
+            for i, w in enumerate(norm_weights):
+                spacing[i] = w * length
+
+            print(spacing)
+
+            for i in range(self.num_sub_boxes - 1):
+                spacing_i = sum(spacing[:i + 1])
+                start = box.get_corner(UL) + inc_dir * spacing_i
+                if self.flip:
+                    end = box.get_corner(UR) + inc_dir * spacing_i
+                else:
+                    end = box.get_corner(DL) + inc_dir * spacing_i
+                l = Line(start=start, end=end)
+                l.set_stroke(width=1, opacity=0.5)
+                group.add(l)
+
+            # draw sub boxes
+            for i in range(self.num_sub_boxes):
+                if i not in self.sub_boxes:
+                    continue
+
+                sub_box_width = width if self.flip else spacing[i]
+                sub_box_height = spacing[i] if self.flip else height
+                sub_box = self.sub_boxes[i].createObjs(sub_box_width, sub_box_height, draw_outer_box=False)
+                # sub_box.set_stroke(width=1, opacity=0.5)
+
+                sub_box_ul = box.get_corner(UL) + (inc_dir * sum(spacing[:i]))
+                sub_box.align_to(sub_box_ul, UL)
+                group.add(sub_box)
+
+        return group
 class M1(Scene):
 
 
     def construct(self):
-        self.square = Square(side_length=4)
-        self.outer_square = Square(side_length=4.1, color=WHITE, fill_opacity=0)
+        self.square = Square(side_length=6)
+        self.outer_square = Square(side_length=6.1, color=WHITE, fill_opacity=0)
         self.outer_square.set_stroke(width=10)
         
         self.objs = []
@@ -31,7 +108,9 @@ class M1(Scene):
 
         self.play(
             *self.animate_top_left(),
-            *self.animate_top_right()
+            *self.animate_top_right(),
+            *self.animate_bottom_left(),
+            *self.animate_bottom_right(),
         )
 
         # self.play(
@@ -42,7 +121,7 @@ class M1(Scene):
 
         self.play(
             FadeOut(*self.objs, run_time=0.3),
-            Transform(self.outer_square, apple_logo)
+            CounterclockwiseTransform(self.outer_square, apple_logo)
         )
 
         self.play(
@@ -239,3 +318,159 @@ class M1(Scene):
             self.objs += gpu_objs
 
         return animations
+    
+    def animate_bottom_left(self):
+
+        # instead of drawing boxes manually, let's build a tree of boxes
+        # and write a function to programmatically draw them
+
+        QUAD_WIDTH = self.square.get_width() / 2
+        QUAD_HEIGHT = QUAD_WIDTH
+        QUAD_UL = self.square.get_edge_center(LEFT)
+        
+        ll = Box(num_sub_boxes=2, flip=True)
+        ll.setSubBoxWeight(-1, 2)
+
+        NUM_E_CORES = 4
+        e_cores = ll.addSubBox(0, num_sub_boxes=NUM_E_CORES)
+        for i in range(NUM_E_CORES):
+            e_core = e_cores.addSubBox(i, num_sub_boxes=3)
+            e_core.setSubBoxWeight(1, 2)
+
+            core = e_core.addSubBox(1, num_sub_boxes=5, flip=True)
+            core.setSubBoxWeight(0, 3)  # top
+            core.setSubBoxWeight(-1, 3) # bot
+            core.setSubBoxWeight(2, 3)
+
+            core.addSubBox(0, num_sub_boxes=5)
+            core.addSubBox(-1, num_sub_boxes=5)
+        
+        # Neural engines
+        NUM_NPU_ROWS = 2
+        NUM_NPU_COLS = 8
+        npus = ll.addSubBox(1, num_sub_boxes=NUM_NPU_ROWS, flip=True)
+        for i in range(NUM_NPU_ROWS):
+            npu_row = npus.addSubBox(i, num_sub_boxes=NUM_NPU_COLS)
+            for j in range(NUM_NPU_COLS):
+                npu = npu_row.addSubBox(j, num_sub_boxes=4)
+                for k in range(4):
+                    npu_core = npu.addSubBox(k, num_sub_boxes=4, flip=True)
+                    if k in [1, 2]:
+                        npu_core.addSubBox(1, num_sub_boxes=8, flip=True)
+                        npu_core.addSubBox(2, num_sub_boxes=8, flip=True)
+
+                
+            
+
+        ll_objs = ll.createObjs(QUAD_WIDTH, QUAD_HEIGHT)
+        ll_objs.align_to(QUAD_UL, UL)
+
+        self.objs += ll_objs
+        return [Create(ll_objs)]
+    
+    def animate_bottom_right(self):
+        QUAD_WIDTH = self.square.get_width() / 2
+        QUAD_HEIGHT = QUAD_WIDTH
+        QUAD_UR = self.square.get_edge_center(RIGHT)
+
+        lr = Box(num_sub_boxes=2, flip=True)
+
+        secure_enclave = lr.addSubBox(0, num_sub_boxes=2)
+        se_left = secure_enclave.addSubBox(0, num_sub_boxes=2, flip=True)
+        engine = se_left.addSubBox(0, num_sub_boxes=7)
+        engine.setSubBoxWeight(1, 3)
+        engine.setSubBoxWeight(-2, 3)
+        engine.setSubBoxWeight(3, 10)
+        engine.addSubBox(0, num_sub_boxes=20, flip=True)
+        engine.addSubBox(-1, num_sub_boxes=20, flip=True)
+
+        engine_core = engine.addSubBox(3, num_sub_boxes=5, flip=True)
+        engine_core_centre = engine_core.addSubBox(2, num_sub_boxes=11)
+        engine_core_centre.setSubBoxWeight(0, 3)
+        engine_core_centre.setSubBoxWeight(-1, 3)
+        engine_core_centre.addSubBox(4, num_sub_boxes=4)
+        engine_core_centre.addSubBox(6, num_sub_boxes=4)
+
+        engine_peripheral = se_left.addSubBox(1, num_sub_boxes=2)
+        crypto = engine_peripheral.addSubBox(0, num_sub_boxes=5)
+        crypto.setSubBoxWeight(2, 7)
+        crypto_core = crypto.addSubBox(2, num_sub_boxes=5, flip=True)
+        crypto_core.addSubBox(0, num_sub_boxes=12)
+        crypto_core.addSubBox(-1, num_sub_boxes=12)
+        crypto_core_centre = crypto_core.addSubBox(2, num_sub_boxes=3)
+        crypto_core_centre.setSubBoxWeight(1, 0.7)
+        crypto_core_centre.addSubBox(0, num_sub_boxes=2, flip=True)
+        crypto_core_centre.addSubBox(-1, num_sub_boxes=2, flip=True)
+
+        aux_cores = engine_peripheral.addSubBox(1, num_sub_boxes=2, flip=True)
+        aux_top = aux_cores.addSubBox(0, num_sub_boxes=2)
+
+        misc1 = aux_top.addSubBox(0, num_sub_boxes=3)
+        misc1.addSubBox(-1, num_sub_boxes=6, flip=True)
+        misc1_centre = misc1.addSubBox(1, num_sub_boxes=3, flip=True)
+        misc1_centre.addSubBox(1, num_sub_boxes=3)
+
+        misc2 = aux_top.addSubBox(-1, num_sub_boxes=3, flip=True)
+        misc2.setSubBoxWeight(1, 1.5)
+        misc2_centre = misc2.addSubBox(1, num_sub_boxes=3)
+        misc2_centre.addSubBox(1, num_sub_boxes=5, flip=True)
+
+        aux_bot = aux_cores.addSubBox(1, num_sub_boxes=3, flip=True)
+        aux_bot_centre = aux_bot.addSubBox(1, num_sub_boxes=3)
+        aux_bot_centre.setSubBoxWeight(1, 2)
+        aux_bot_centre.addSubBox(0, num_sub_boxes=5)
+        aux_bot_centre.addSubBox(-1, num_sub_boxes=5)
+        aux_bot_centre.addSubBox(1, num_sub_boxes=2, flip=True)
+
+        se_right = secure_enclave.addSubBox(1, num_sub_boxes=3, flip=True)
+        se_right.setSubBoxWeight(0, 1)
+        se_right.setSubBoxWeight(1, 3)
+        se_right.setSubBoxWeight(2, 24)
+        se_io_top = se_right.addSubBox(1, num_sub_boxes=32)
+        se_io_top.setSubBoxWeight(-1, 8)
+
+        se_io_main = se_right.addSubBox(2, num_sub_boxes=2)
+        se_io_main.setSubBoxWeight(-1, 0.25)
+        se_io_main.addSubBox(1, num_sub_boxes=32, flip=True)
+
+        se_io_core = se_io_main.addSubBox(0, num_sub_boxes=5)
+        se_io_core.setSubBoxWeight(1, 0.5)
+        se_io_core.setSubBoxWeight(2, 2)
+        se_io_core.setSubBoxWeight(3, 0.5)
+        se_io_core_left = se_io_core.addSubBox(0, num_sub_boxes=5, flip=True)
+        se_io_core_left.setSubBoxWeight(0, 3)
+        se_io_core_left.setSubBoxWeight(-1, 3)
+        se_io_core_right = se_io_core.addSubBox(-1, num_sub_boxes=5, flip=True)
+        se_io_core_right.setSubBoxWeight(0, 3)
+        se_io_core_right.setSubBoxWeight(-1, 3)
+        se_io_core_centre = se_io_core.addSubBox(2, num_sub_boxes=3, flip=True)
+        se_io_core_centre.setSubBoxWeight(1, 0.2)
+        se_io_core_centre.addSubBox(0, num_sub_boxes=2)
+        se_io_core_centre.addSubBox(-1, num_sub_boxes=2)
+
+        media = lr.addSubBox(1, num_sub_boxes=5, flip=True)
+        media.setSubBoxWeight(2, 3)
+        media_core = media.addSubBox(2, num_sub_boxes=5)
+        media_core.setSubBoxWeight(0, 2)
+        media_core.setSubBoxWeight(1, 1)
+        media_core.setSubBoxWeight(2, 3)
+        media_core.setSubBoxWeight(3, 1)
+        media_core.setSubBoxWeight(-1, 2)
+
+        m_out_left = media_core.addSubBox(0, num_sub_boxes=7, flip=True)
+        m_out_left.setSubBoxWeight(3, 3)
+        m_out_right = media_core.addSubBox(-1, num_sub_boxes=7, flip=True)
+        m_out_right.setSubBoxWeight(3, 3)
+
+        media_core.addSubBox(1, num_sub_boxes=20, flip=True)
+        media_core.addSubBox(3, num_sub_boxes=20, flip=True)
+        media_core_centre = media_core.addSubBox(2, num_sub_boxes=5, flip=True)
+        media_core_centre.addSubBox(1, num_sub_boxes=20)
+        media_core_centre.addSubBox(3, num_sub_boxes=20)
+
+        lr_objs = lr.createObjs(QUAD_WIDTH, QUAD_HEIGHT)
+        lr_objs.align_to(QUAD_UR, UR)
+
+        self.objs += lr_objs
+        
+        return [Create(lr_objs)]
