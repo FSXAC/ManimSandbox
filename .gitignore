@@ -1,0 +1,4 @@
+virtualenv/
+.python-version
+__pycache__/
+media/
